@@ -1,0 +1,355 @@
+\documentclass[10pt, a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=1.8cm, right=1.8cm]{geometry}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{times}
+\usepackage{parskip}
+\usepackage{tabularx}
+
+\tcbuselibrary{skins, breakable}
+
+% ── Colors ────────────────────────────────────────────────────────────────────
+\definecolor{navyblue}{RGB}{26, 50, 89}
+\definecolor{lightgray}{RGB}{245, 245, 245}
+\definecolor{linkblue}{RGB}{0, 102, 204}
+
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries}
+  {\thesubsection}
+  {0.5em}
+  {}
+\titlespacing*{\subsection}{0pt}{8pt}{3pt}
+
+% ── Hyperlinks ────────────────────────────────────────────────────────────────
+\hypersetup{colorlinks=true, linkcolor=linkblue, urlcolor=linkblue, citecolor=linkblue}
+
+% ── Header / Footer ───────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small EE200}
+\lhead{\small Question 2 Report}
+\cfoot{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Table & Caption ───────────────────────────────────────────────────────────
+\renewcommand{\arraystretch}{1.3}
+\captionsetup{font=small, labelfont=bf, skip=4pt}
+
+% ── Code listing ──────────────────────────────────────────────────────────────
+\lstset{
+  backgroundcolor=\color{lightgray},
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{navyblue}\bfseries,
+  commentstyle=\color{gray}\itshape,
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Title Page (single column) ────────────────────────────────────────────────
+
+
+  \begin{center}
+    \vspace{2.0cm}
+    {\LARGE \textbf{EE200: Signals, Systems and Networks}}\\[4pt]
+    {\LARGE \textbf{Course Project}}\\[10pt]
+    {\Large \textsc{Question 2 Report}}\\[40pt]
+
+    \Large\textsc{Team Members:}\\[10pt]
+    \makebox[0.3\textwidth][l]{\textbf{240622 Manish Kajla}}\\
+    \makebox[0.3\textwidth][l]{\textbf{241114 Utkarsh Aman}}\\[90pt]
+
+    \Large{\textbf{Abstract}}\\[15pt]
+    \begin{minipage}{0.90\textwidth}
+      \large\itshape\centering
+      This report gives implementation and signals and systems analysis of a real time arrhythmia detection system using the ECG signals. By modeling a healthy ECG segment as a nearly periodic signal, we characterize its spectral properties and formulate an optimal windowing strategy to isolate a single healthy heartbeat template. A sliding template matching algorithm based on normalized cross correlation is made to evaluate shape similarity sample by sample and figure out the exact onset of cardiac irregularities. 
+      
+      Additionally, time frequency analysis is conducted using a spectrogram to contrast the harmonic behavior of healthy intervals against the chaotic spectral smearing of arrhythmic periods. Finally the practical limits of battery conservation via under sampling are analyzed using the Nyquist Shannon sampling theorem, highlighting the role of aliasing in signal distortion and the design trade offs associated with anti aliasing pre filtering. The results shows the power of digital signal processing in clinical monitoring applications.
+    \end{minipage}\\[12pt]
+   
+    \vspace{0.2cm}
+  \end{center}
+\clearpage
+\tableofcontents
+\clearpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+Electrocardiography (ECG) is a diagnostic tool that measures the electrical activity of our heart with respect to time. Under normal physiological conditions, a healthy heart behave as stable periodic signal generator, repeating a characteristic sequence consisting of the P wave, the QRS complex, and the T wave. However, cardiac pathology, such as arrhythmia, broke this periodic behavior, causing changes in frequency (timing irregularities) and morphology (shape changes).
+
+Detecting these pathological shifts manually in long recordings is boring and error prone. This report contains detailed design of a template based automated detection system. The template matcher find out a single healthy beat and slides it across the recording, calculating the normalized correlation. When the correlation drops below a specific threshold, the onset of the arrhythmia is identified. 
+
+We analyze this system from a signals and systems perspective: studying the frequency component of the ECG, optimizing window lengths for template extraction, evaluating normalized correlation metrics, comparing time domain methods to spectrogram analysis, and analyzing sampling and aliasing considerations.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Theoretical Background}
+
+\subsection{Periodicity and Harmonics}
+A continuous time periodic signal $x(t)$ with period $T_0$ satisfies $x(t) = x(t + T_0)$. It can be shown via the Fourier series as a sum of periodiclly related complex exponentials:
+\begin{equation}
+x(t) = \sum_{k=-\infty}^{\infty} c_k e^{j k \omega_0 t}
+\end{equation}
+where $\omega_0 = 2\pi/T_0 = 2\pi f_0$ is the fundamental angular frequency. The Fourier transform of a periodic signal is a sequence of Dirac delta spikes at integer multiples of $f_0$ in the frequency domain :
+\begin{equation}
+X(f) = \sum_{k=-\infty}^{\infty} c_k \delta(f - k f_0)
+\end{equation}
+For a discrete time signal $x[n]$ with period $N_0$ samples, the Discrete Fourier Transform (DFT) similarly exhibits distinct spectral lines. When the signal is only approximately periodic, the peaks widen, but the harmonic structure remains identifiable.
+
+\subsection{Windowing and the Uncertainty Principle}
+Isolating a local segment of a signal requires multiplying it by a window function $w[n]$. The windowed signal is $x_w[n] = x[n] w[n]$. In the frequency domain, this corresponds to the circular convolution of their DTFTs:
+\begin{equation}
+X_w(e^{j\omega}) = \frac{1}{2\pi} \int_{-\pi}^{\pi} X(e^{j\theta}) W(e^{j(\omega - \theta)}) d\theta
+\end{equation}
+A rectangular window of length $L$ has a Dirichlet kernel spectrum. The main lobe width is inversely proportional to $L$. Consequently, a short window provides high time resolution but being the reason of spectral smearing (bad frequency resolution). A long window provides sharp frequency resolution but smears temporal events.
+
+\subsection{Normalized Correlation}
+To measure shape similarity between a template $t[k]$ of length $L$ and a segment $x[m+k]$, we compute the normalized correlation coefficient:
+\begin{equation}
+\rho(m) = \frac{\sum_{k=0}^{L-1} t[k] x[m+k]}{\sqrt{\sum_{k=0}^{L-1} t[k]^2} \sqrt{\sum_{k=0}^{L-1} x[m+k]^2}}
+\end{equation}
+This normalizes the signals by their energies, rendering the score invariant to amplitude scaling.
+
+\subsection{Nyquist-Shannon Sampling Theorem}
+To reconstruct a band limited continuous-time signal $x(t)$ with maximum frequency $f_{max}$ without distortion, it must be sampled at a rate $f_s$ satisfying:
+\begin{equation}
+f_s > 2 f_{max}
+\end{equation}
+If $f_s < 2 f_{max}$, frequency components above $f_s/2$ fold back (alias) into the base band, distorting the signal shape.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Q2(a) \& Q2(b): ECG Characterization \& Spectral Analysis}
+
+\subsection{ECG Clip Characterization}
+The ECG recording $x[n]$ is characterized by a length $N = 5000$ samples and with the sampling frequency $f_s = 250$ Hz.
+\begin{enumerate}
+    \item \textbf{Clip Duration:} Total duration of the recording is calculated as:
+    \begin{equation}
+    \text{Duration} = \frac{N}{f_s} = \frac{5000}{250} = 20\text{ seconds}
+    \end{equation}
+    \item \textbf{Heart Rate and Beat Length:} In the healthy region, the heart beats regularly with a period of $T_0 = 0.8$ seconds. The heart rate in beats per minute (BPM) is:
+    \begin{equation}
+    \text{Heart Rate} = \frac{60}{T_0} = \frac{60}{0.8} = 75\text{ BPM}
+    \end{equation}
+    The number of samples $L$ occupied by one healthy beat is:
+    \begin{equation}
+    L = T_0 \times f_s = 0.8 \times 250 = 200\text{ samples}
+    \end{equation}
+    \item \textbf{Fundamental Frequency:} Treating the healthy ECG segment as periodic, its fundamental frequency $f_0$ is:
+    \begin{equation}
+    f_0 = \frac{1}{T_0} = \frac{1}{0.8} = 1.25\text{ Hz}
+    \end{equation}
+\end{enumerate}
+
+\subsection{Frequency Domain Analysis}
+\begin{enumerate}
+    \item \textbf{Spectrum Shape:} Because the healthy ECG signal is nearly periodic in time, its magnitude spectrum $|X(f)|$ is not a smooth continuous curve. Instead, it consists of a series of discrete spikes (harmonics) located at integer multiples of the fundamental frequency $f_0 = 1.25$ Hz (e.g., $1.25$ Hz, $2.50$ Hz, $3.75$ Hz, etc.). Figure \ref{fig:magnitude_spectrum} shows the spectrum of a healthy segment, confirming these distinct harmonic peaks.
+    
+    \begin{figure}[H]
+      \centering
+      \includegraphics[width=0.98\columnwidth]{plots/magnitude_spectrum.png}
+      \caption{Magnitude spectrum $|X(f)|$ of the healthy ECG segment (0 to 9.6 s), showing discrete peaks at integer multiples of $f_0 = 1.25$ Hz.}
+      \label{fig:magnitude_spectrum}
+    \end{figure}
+    
+    \item \textbf{High-Frequency Content:} The QRS complex is a sharp and narrow transient spike in the time domain, whereas the P and T waves are broad and smooth. By the scaling property of the Fourier Transform, a signal compressed in time corresponds to an expanded spectrum in frequency. Therefore, the QRS complex is responsible for the high-frequency content of the ECG (up to 40 Hz), while the P and T waves correspond to lower frequencies.
+    
+    \item \textbf{Tachycardia Effects:} If the patient's heart rate increases to $150$ BPM ($2.5$ beats per second) while remaining regular, the period decreases to $T'_0 = 60/150 = 0.4$ seconds. The fundamental frequency becomes:
+    \begin{equation}
+    f'_0 = \frac{1}{T'_0} = 2.5\text{ Hz}
+    \end{equation}
+    This doubles the fundamental frequency, causing the spacing between the spectral harmonics to double from $1.25$ Hz to $2.5$ Hz.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Q2(c): Cutting a Heartbeat (Windowing)}
+To isolate a clean template, Maya multiplies the signal by a rectangular window.
+
+\begin{enumerate}
+    \item \textbf{Optimal Window Parameters:} To capture exactly one full healthy heartbeat, the window must have a length equal to the beat duration, which is $L = 200$ samples. This window should be placed in the early healthy portion of the recording (e.g., starting at sample index 100) where the signal is stable and regular.
+    
+    \item \textbf{Sub-optimal Window Widths:}
+    \begin{itemize}
+        \item \textbf{80 Samples (Too Short):} A window of 80 samples is narrower than a full heartbeat (200 samples). This truncates critical parts of the wave (such as the P or T waves), resulting in an incomplete template that does not represent the full cardiac cycle.
+        \item \textbf{600 Samples (Too Long):} A window of 600 samples captures three full cardiac cycles. This makes the template overly specific to that particular sequence of three beats, preventing it from functioning as a flexible single-beat detector.
+    \end{itemize}
+    The visual effect of these window lengths is illustrated in Figure \ref{fig:window_choices}.
+    
+    \begin{figure}[H]
+      \centering
+      \includegraphics[width=0.98\columnwidth]{plots/window_choices.png}
+      \caption{Effect of different window widths (80, 200, and 600 samples) on the isolated ECG template.}
+      \label{fig:window_choices}
+    \end{figure}
+
+    \item \textbf{Time-Frequency Trade-off:} The choice of window size is constrained by the time-frequency uncertainty principle. A very short window is not automatically best because it fails to capture the full structural shape of the healthy beat in the time domain and yields broad spectral smearing, making it vulnerable to high-frequency noise spikes.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Q2(d): Shape Similarity \& Normalized Correlation}
+
+\begin{enumerate}
+    \item \textbf{Range of Correlation Score:} The normalized correlation score $\rho(m)$ is mathematically equivalent to the cosine of the angle between the template and the segment vectors in $L$-dimensional space. Thus, its range is:
+    \begin{equation}
+    -1 \le \rho(m) \le 1
+    \end{equation}
+    A value of $\rho(m) \approx 1$ represents a near-perfect match in shape.
+    
+    \item \textbf{Importance of Normalization:} Real ECG signals suffer from baseline wander (slow vertical drift due to breathing or movement) and variations in pulse amplitude. Normalization divides the dot product by the energies of both the template and the segment, isolating shape similarity from amplitude. 
+    
+    Without normalization, the score is $\sum t[k]x[m+k]$. If a healthy beat were twice as tall as the template, the un-normalized score would double. This could cause the detector to threshold-match noisy, high-amplitude artifacts or misclassify healthy beats of varying amplitudes.
+    
+    \item \textbf{Inverted Beats:} An abnormal beat that is inverted (flipped upside-down) is anti-correlated with the template. We expect its normalized correlation to be:
+    \begin{equation}
+    \rho(m) \approx -1
+    \end{equation}
+    Because healthy beats yield $\rho \approx 1$, an inverted beat results in a large negative value. This makes it highly distinct and easy to flag using a threshold (e.g., $\rho < 0.5$).
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Q2(e): Onset Detection \& Spectrogram Comparison}
+
+\begin{enumerate}
+    \item \textbf{Arrhythmia Onset Rule \& Threshold Trade-off:} 
+    Maya can declare the arrhythmia onset time as the first index $m$ where the normalized correlation drops strictly below a threshold:
+    \begin{equation}
+    \rho(m) < \eta \quad (\text{with } \eta = 0.5)
+    \end{equation}
+    \textbf{Threshold Trade-off:}
+    \begin{itemize}
+        \item \textbf{Too High (e.g., $\eta = 0.95$):} The detector becomes overly sensitive, flagging minor physiological variations, baseline noise, or normal heart rate variability as arrhythmia (high rate of False Positives).
+        \item \textbf{Too Low (e.g., $\eta = 0.1$):} The detector becomes too relaxed, missing the onset of actual morphological changes or minor arrhythmia shapes (high rate of False Negatives).
+    \end{itemize}
+    
+    \item \textbf{Spectrogram representation:} 
+    In the healthy region, the ECG is nearly periodic, so the spectrogram shows stable, parallel, horizontal lines (harmonic bands) at integer multiples of $f_0 = 1.25$ Hz. In the arrhythmia region, the loss of periodicity disrupts this harmonic structure. The horizontal bands blur, shift, or merge into broadband vertical smudges.
+    
+    \item \textbf{Time-Resolution Disagreement:}
+    The correlation plot evaluates the signal on a beat-by-beat basis, providing high temporal precision. The spectrogram uses a sliding window (e.g., 128 samples), which introduces time smearing over the window width. Therefore, the \textbf{correlation plot} is more trustworthy for pinpointing the exact onset moment. The comparison between the correlation plot and the spectrogram is shown in Figure \ref{fig:correlation_plot} and Figure \ref{fig:spectrogram_onset}.
+    
+    \begin{figure}[H]
+      \centering
+      \includegraphics[width=0.98\columnwidth]{plots/correlation_plot.png}
+      \caption{Beat-by-beat normalized correlation score $\rho(m)$ across the 20-second recording. The onset is detected when the score drops below the 0.5 threshold.}
+      \label{fig:correlation_plot}
+    \end{figure}
+
+    \begin{figure}[H]
+      \centering
+      \includegraphics[width=0.98\columnwidth]{plots/spectrogram_onset.png}
+      \caption{ECG spectrogram overlaid with the detected onset time ($t \approx 9.6$ s), illustrating the transition from clear horizontal harmonic lines to chaotic, smeared spectral bands.}
+      \label{fig:spectrogram_onset}
+    \end{figure}
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Q2(f): Sampling \& Aliasing}
+
+\begin{enumerate}
+    \item \textbf{Nyquist Rate Requirement:} For an ECG signal containing clinical content up to $f_{max} = 40$ Hz, the Nyquist-Shannon sampling theorem states that the minimum sampling rate must be:
+    \begin{equation}
+    f_s > 2 \times f_{max} = 80\text{ Hz}
+    \end{equation}
+    
+    \item \textbf{Aliasing at 50 Hz:} A sampling rate of $f'_s = 50$ Hz is below the Nyquist rate of 80 Hz. Consequently, frequency components between $25$ Hz and $40$ Hz (present in the sharp QRS complex) will fold back (alias) into the lower frequency band. For instance, a $40$ Hz component will appear at $|50 - 40| = 10$ Hz. 
+    
+    This aliasing distorts the sharp features of the QRS complex, smearing and rounding the spikes. This is dangerous because the detector relies on the sharp shape of the QRS complex. The resulting distortion degrades the correlation score, leading to false arrhythmia detections.
+    
+    \item \textbf{Fix and Diagnostic Cost:} The standard fix before downsampling to 50 Hz is to pass the analog signal through an anti-aliasing low-pass filter with a cutoff frequency of $f_c = 25$ Hz. 
+    
+    The diagnostic cost is the permanent loss of all high-frequency details (above 25 Hz) of the QRS complex. This smooths out the sharp spikes, reducing the clinical utility of the ECG for diagnosing fine cardiac anomalies.
+\end{enumerate}
+\vspace{8mm}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Q2(g) \& Q2(h): Python Implementation \& Verification}
+
+\subsection{Prototyping the Detector in Code}
+The implementation of the beat-by-beat correlation detector is shown in Listing 1. Testing the function with a threshold of 0.5 yields the onset sample index of 2400, corresponding to an onset time of $2400 / 250 = 9.6$ seconds.
+\vspace{8mm}
+
+\begin{lstlisting}[language=Python, caption={Implementation of the find\_onset detector}]
+def find_onset(ecg_signal, template, threshold):
+    
+    L = len(template)
+    n_beats = len(ecg_signal) // L
+    template_norm = np.linalg.norm(template)
+
+    for i in range(n_beats):
+        m = i * L
+        segment = ecg_signal[m:m + L]
+
+        segment_norm = np.linalg.norm(segment)
+        if segment_norm == 0:
+            score = 0.0
+        else:
+            score = np.dot(template, segment) / (template_norm * segment_norm)
+
+        if score < threshold:
+            return m
+
+    return -1
+\end{lstlisting}
+
+\subsection{Spectrogram Visualization}
+The python code to compute and plot the spectrogram is shown in Listing 2. The resulting spectrogram is shown in Figure \ref{fig:spectrogram_standard}.
+
+\begin{lstlisting}[language=Python, caption={Spectrogram computation code snippet}]
+import matplotlib.pyplot as plt
+from scipy.signal import spectrogram
+
+# ecg_signal assumed already loaded as a 1D NumPy array
+nperseg = 128   # chosen to resolve f0 harmonics while keeping reasonable time resolution
+
+f, t, Sxx = spectrogram(ecg, fs=fs, nperseg=nperseg, noverlap=nperseg // 2)
+
+plt.figure(figsize=(10, 4))
+plt.pcolormesh(t, f, 10 * np.log10(Sxx + 1e-12), shading='gouraud')
+plt.xlabel("Time (s)")
+plt.ylabel("Frequency (Hz)")
+plt.ylim(0, 30)
+plt.title(f"ECG spectrogram (nperseg={nperseg})")
+plt.colorbar(label="Power (dB)")
+plt.show()
+\end{lstlisting}
+
+\textbf{Choice of Window Length (nperseg):}
+We selected `nperseg = 128` (representing approximately 0.512 seconds). This value is large enough to resolve the $1.25$ Hz spacing between the fundamental harmonics (requiring a frequency resolution of at least $\approx 1.25$ Hz, which 128 samples provides since $f_s/128 = 250/128 \approx 1.95$ Hz) while remaining short enough to avoid excessive temporal smearing, allowing us to see the transition at 9.6 seconds.
+
+\begin{figure}[H]
+  \centering
+      \includegraphics[width=0.98\columnwidth]{plots/spectrogram_standard.png}
+      \caption{ECG spectrogram computed with `nperseg = 128`, highlighting the degradation of harmonic lines in the arrhythmia region.}
+      \label{fig:spectrogram_standard}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion \& Clinical Implications}
+The results demonstrate the clinical utility of template matching for ECG analysis. By using normalized correlation, we ensure robustness against baseline wander and amplitude variability.
+
+The time frequency analysis using the spectrogram confirms that arrhythmia manifests as a loss of harmonic structure. In normal sinus rhythm, the heart behaves as a stable oscillator, producing a clean line spectrum. During arrhythmia, this periodicity breaks down, scattering energy across the frequency band. 
+
+Additionally, we showed that wearable devices targeting battery savings must balance sampling rates against signal distortion. A sample rate of 50 Hz introduces aliasing unless filtered, which rounds off the QRS complex and limits diagnostic accuracy.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+This report has presented a template matching and spectral analysis framework for detecting the onset of cardiac arrhythmia. We showed that a template length of 200 samples (0.8 second) combined with normalized correlation provides high temporal resolution for detecting abnormal beats, pinpointing the onset at $t = 9.6$ seconds. Spectrogram analysis verified these results, showing a transition from regular harmonic bands to chaotic, smeared spectra. Finally, we discussed sampling and aliasing trade-offs, demonstrating that signal conditioning is critical for reliable automated diagnosis.
+
+\end{document}

@@ -104,12 +104,29 @@
     \vspace{0.2cm}
   \end{center}
 
+\vspace{0.5cm}
+
+\noindent\textbf{Live Streamlit App:} \\
+\url{https://audio-fingerprinting-241114-240622.streamlit.app/}
+
+\vspace{0.2cm}
+
+\noindent\textbf{Alternate Streamlit App (if the above link is unavailable):} \\
+\url{https://audio-fingerprinting-240622-241114.streamlit.app/}
+
+\vspace{0.2cm}
+
+\noindent\textbf{Source Code Repository:} \\
+\url{https://github.com/Utkarsh-Aman/Audio-Fingerprinting}
+\newpage
 
 
 
-\maketitle
+\tableofcontents
 
-\section*{1. The Limitation of a Single Fourier Transform}
+\newpage
+
+\section{1. The Limitation of a Single Fourier Transform}
 To understand why a single Fourier transform is insufficient for audio fingerprinting, we computed the Discrete Fourier Transform (DFT) magnitude of an entire song ("Yesterday"). As shown in Figure \ref{fig:dft}, the DFT provides a global frequency profile, revealing which frequencies are present overall. However, all sense of timing is completely lost. A note played at the beginning of the song and a note played at the end are indistinguishable in this global spectrum. For fingerprinting, we need to know \textit{when} specific frequencies occur.
 
 \begin{figure}[H]
@@ -119,7 +136,7 @@ To understand why a single Fourier transform is insufficient for audio fingerpri
     \label{fig:dft}
 \end{figure}
 
-\section*{2. The Spectrogram and Time-Frequency Resolution}
+\section{2. The Spectrogram and Time-Frequency Resolution}
 To capture both time and frequency information, we use a spectrogram. By sliding a short window across the signal, computing the DFT for each slice, and stacking the results, we can watch frequency content evolve over time.
 
 We compared spectrograms computed with a short window ($N\_FFT=512$) and a long window ($N\_FFT=8192$), shown in Figure \ref{fig:spectrograms}. This demonstrates the fundamental time-frequency tradeoff (the uncertainty principle):
@@ -142,7 +159,7 @@ For fingerprinting, we settle on a middle ground (e.g., $N\_FFT=4096$) that bala
     \label{fig:spectrograms}
 \end{figure}
 
-\section*{3. Constellation Map (Peak Picking)}
+\section{3. Constellation Map (Peak Picking)}
 The fingerprint relies on a sparse set of standout points rather than the entire dense spectrogram. We extract local maxima (peaks) from the spectrogram magnitude. A peak is defined as a point that is louder than its immediate neighbors in a small 2D time-frequency window, and above a minimum amplitude threshold (to ignore background noise).
 
 Figure \ref{fig:constellation} shows the extracted constellation map overlaid on the spectrogram. Extracting local maxima ensures peaks are spread across the entire clip's structural features, rather than clumping around a single globally loud event.
@@ -154,10 +171,10 @@ Figure \ref{fig:constellation} shows the extracted constellation map overlaid on
     \label{fig:constellation}
 \end{figure}
 
-\section*{4. Hash Generation and Pairing}
+\section{4. Hash Generation and Pairing}
 A single peak $(time, frequency)$ is not highly unique across a large database of songs. To create a robust signature, we pair nearby peaks into compact hashes: $(f_{anchor}, f_{target}, \Delta t)$, where $\Delta t$ is the time gap between the anchor peak and target peak. This combinatorial pairing creates highly specific fingerprints that dramatically reduce false collisions.
 
-\section*{5. Identification and Offset Matching}
+\section{5. Identification and Offset Matching}
 To identify a query clip, we fingerprint it to extract hashes and look up those hashes in our database. For every matching hash, we compute the relative time offset between the database occurrence and the query occurrence: $Offset = t_{database} - t_{query}$. 
 
 Figure \ref{fig:offset_paired} shows the offset histograms for a correct match versus an incorrect candidate. Because the query is a time-shifted excerpt of the true song, all correct hash matches vote for the \textit{same} time offset, creating a massive, sharp spike. Conversely, random hash collisions with an incorrect song scatter randomly across many offsets.
@@ -169,7 +186,7 @@ Figure \ref{fig:offset_paired} shows the offset histograms for a correct match v
     \label{fig:offset_paired}
 \end{figure}
 
-\section*{6. Paired Hashes vs. Single Peaks}
+\section{6. Paired Hashes vs. Single Peaks}
 We repeated the identification process using only single-peak matching (e.g., matching just the frequency bin). As shown in Figure \ref{fig:offset_single}, single peaks yield a much flatter histogram with high background noise. The combinatorics of pairing peaks ($f_1, f_2, \Delta t$) forces matches to possess rigid structural relationships, making the correct song's spike vastly more decisive compared to background collision noise.
 
 \begin{figure}[H]
@@ -179,9 +196,9 @@ We repeated the identification process using only single-peak matching (e.g., ma
     \label{fig:offset_single}
 \end{figure}
 
-\section*{7. Robustness Testing}
+\section{7. Robustness Testing}
 
-\subsection*{a. Noise Robustness}
+\subsection{a. Noise Robustness}
 We added white Gaussian noise at decreasing Signal-to-Noise Ratios (SNR) to a query clip. Figure \ref{fig:robustness_noise} shows that the system remains highly confident even under moderate noise, failing only when the noise entirely buries the dominant structural peaks (e.g., below 0 dB SNR).
 
 \begin{figure}[H]
@@ -191,7 +208,7 @@ We added white Gaussian noise at decreasing Signal-to-Noise Ratios (SNR) to a qu
     \label{fig:robustness_noise}
 \end{figure}
 
-\subsection*{b. Pitch Shift Robustness}
+\subsection{b. Pitch Shift Robustness}
 We artificially shifted the pitch of the query clip by fractions of a semitone. As Figure \ref{fig:robustness_pitch} shows, even a tiny shift ($\geq 0.5$ semitones) breaks the identifier completely. Although the song sounds perceptually identical to humans, our database hashes rely on \textit{exact} absolute frequency bins. Shifting the pitch moves all peaks vertically out of their recorded bins, causing total hash lookup failure.
 
 \begin{figure}[H]
@@ -201,7 +218,7 @@ We artificially shifted the pitch of the query clip by fractions of a semitone. 
     \label{fig:robustness_pitch}
 \end{figure}
 
-\subsection*{c. Proposed Improvements}
+\subsection{c. Proposed Improvements}
 To make the system robust to slight pitch variations, one concrete change would be to use \textbf{frequency ratios} ($f_{target} / f_{anchor}$) or logarithmic frequency gaps instead of absolute frequencies in the hash tuple. Because pitch shifting moves all frequencies by a constant multiplicative factor, their ratios remain invariant, allowing hashes to match despite pitch distortions. Alternatively, we could perform \textbf{fuzzy matching} by quantizing frequency bins with a larger tolerance.
 
 \end{document}

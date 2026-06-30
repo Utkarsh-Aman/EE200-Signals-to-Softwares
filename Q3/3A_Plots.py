@@ -1,3 +1,7 @@
+
+#we made this file for generating all plots and graphs for the report using the functions from fingerprint.py file
+#all functions are in fingerprint.py file so import everything from it 
+# Reason to do so is for easy deployment and to avoid copy pasting the functions and code in every file
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Audio_Fingerprinting'))
 
@@ -8,7 +12,7 @@ import soundfile as sf
 from collections import defaultdict
 import pickle
 
-from fingerprint import load_audio, compute_spectrogram, find_peaks, generate_hashes, SAMPLE_RATE, identify
+from Audio_Fingerprinting.fingerprint import load_audio, compute_spectrogram, find_peaks, generate_hashes, SAMPLE_RATE, identify
 
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), 'plots')
 os.makedirs(PLOTS_DIR, exist_ok=True)
